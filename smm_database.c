@@ -199,6 +199,16 @@ int smmdb_len(int list_nr)
     return list_cnt[list_nr];
 }
 
+// ? 추가: main.c에서 사용하는 smmdb_listCount 함수
+/*
+    description : return the number of data objects in the list (alias for smmdb_len)
+    return value : length
+*/
+int smmdb_listCount(int list_nr)
+{
+    return list_cnt[list_nr];
+}
+
 
 /*
     description : get the object data

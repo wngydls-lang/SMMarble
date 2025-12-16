@@ -180,6 +180,17 @@ int smm_get_foodcard_energy(SMMFoodCard card) { return card->energy; }
 // Festival Card Getters
 char* smm_get_festcard_content(SMMFestCard card) { return card->content; }
 
+// ? Ãß°¡: LectureHistory Getters
+char* smm_get_lecture_name(SMMLectureHistory history) 
+{ 
+    return history->name; 
+}
+
+int smm_get_lecture_grade(SMMLectureHistory history) 
+{ 
+    return (int)history->grade; 
+}
+
 // Player Getters
 char* smm_get_player_name(SMMPlayer player) { return player->name; }
 int smm_get_player_energy(SMMPlayer player) { return player->current_energy; }

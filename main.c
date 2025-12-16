@@ -4,8 +4,11 @@
 //
 //
 
+#include <stdio.h> // C90 표준에서는 stdio.h가 필요합니다.
 #include <time.h>
 #include <string.h>
+#include <stdlib.h> // rand, srand, size_t 등을 위해 추가 (smm_common.h에 이미 있으나 명시적으로 유지)
+
 #include "smm_object.h"
 #include "smm_database.h"
 #include "smm_common.h"
@@ -21,19 +24,32 @@ static int food_nr;
 static int festival_nr;
 
 
+// ========================================================================================
+// [수정 1] 누락된 타입 정의 추가 (SMMGrade_e)
+// SMMGrade_e가 헤더 파일에 없으므로 main.c 상단에 추가하여 타입 오류를 해결합니다.
+//========================================================================================
+typedef enum smmGrade_e {
+    SMM_APLUS, SMM_A0, SMM_AMINUS,
+    SMM_BPLUS, SMM_B0, SMM_BMINUS,
+    SMM_CPLUS, SMM_C0, SMM_CMINUS,
+    SMM_F // F학점도 포함
+} SMMGrade_e;
 
-//function prototypes
-#if 0
-int isGraduated(void); //check if any player is graduated
-void generatePlayers(int n, int initEnergy); //generate a new player
-void printGrades(int player); //print grade history of the player
-void goForward(int player, int step); //make player go "step" steps on the board (check if player is graduated)
-void printPlayerStatus(void); //print all player status at the beginning of each turn
-float calcAverageGrade(int player); //calculate average grade of the player
-smmGrade_e takeLecture(int player, char *lectureName, int credit); //take the lecture (insert a grade of the player)
-void* findGrade(int player, char *lectureName); //find the grade from the player's grade history
-void printGrades(int player); //print all the grade history of the player
-#endif
+
+// ========================================================================================
+// [수정 3] 모든 함수의 원형 선언 (Prototype)
+// main 함수보다 나중에 정의된 함수들을 위해 C90 문법을 준수합니다.
+//========================================================================================
+int isGraduated(SMMPlayer *players, int player_nr, int board_nr);
+void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr);
+void goForward(int player_index, int step, SMMPlayer *players, int board_nr);
+void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_result);
+int rolldie(int player_index, SMMPlayer *players);
+float calcAverageGrade(int player_index, SMMPlayer *players);
+SMMGrade_e takeLecture(int player_index, char *lectureName, int credit, SMMPlayer *players);
+void printGrades(int player_index, SMMPlayer *players);
+void printFinalResult(SMMPlayer *players, int player_nr);
+
 
 // =================================================================================================
 // PHASE 3 구현 함수 시작
@@ -43,9 +59,11 @@ void printGrades(int player); //print all the grade history of the player
 // 졸업 조건: GRADUATE_CREDIT 이상 이수 + 집 노드(유형 3)에 위치
 int isGraduated(SMMPlayer *players, int player_nr, int board_nr)
 {
-    // 0번 노드는 집 노드이므로, DB에서 가져올 필요 없이 0번 위치 확인만으로 충분합니다.
+    // [C90] 루프 변수 'i'는 함수 시작 부분에 선언된 것으로 간주합니다.
+    int i; 
     
-    for (int i = 0; i < player_nr; i++)
+    // 0번 노드는 집 노드이므로, DB에서 가져올 필요 없이 0번 위치 확인만으로 충분합니다.
+    for (i = 0; i < player_nr; i++)
     {
         // 1. 학점 확인: GRADUATE_CREDIT 이상
         if (smm_get_player_credit(players[i]) >= GRADUATE_CREDIT)
@@ -66,19 +84,26 @@ int isGraduated(SMMPlayer *players, int player_nr, int board_nr)
 // print all player status at the beginning of each turn
 void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr)
 {
+    // [C90] 모든 변수 선언을 함수 시작으로 이동
+    int i;
+    SMMPlayer p;
+    int pos;
+    SMMNode current_node;
+    float gpa;
+    
     printf("\n\n-------------------------------------------------------\n");
-    printf("                  CURRENT PLAYER STATUS                \n");
+    printf("              CURRENT PLAYER STATUS                  \n");
     printf("-------------------------------------------------------\n");
     
-    for (int i = 0; i < player_nr; i++)
+    for (i = 0; i < player_nr; i++)
     {
-        SMMPlayer p = players[i];
-        int pos = smm_get_player_position(p);
+        p = players[i];
+        pos = smm_get_player_position(p);
         // DB에서 현재 위치의 노드 정보를 가져옵니다.
-        SMMNode current_node = (SMMNode)smmdb_getData(LISTNO_NODE, pos);
+        current_node = (SMMNode)smmdb_getData(LISTNO_NODE, pos);
         
         // GPA 계산 (Phase 5 반영)
-        float gpa = calcAverageGrade(i, players);
+        gpa = calcAverageGrade(i, players);
         
         printf("[P%i] %s (E: %i, C: %i, GPA: %.2f) | Location: %i(%s)",
                i + 1,
@@ -106,21 +131,32 @@ void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr)
 // make player go "step" steps on the board (check if player is graduated)
 void goForward(int player_index, int step, SMMPlayer *players, int board_nr)
 {
-    SMMPlayer p = players[player_index];
-    int current_pos = smm_get_player_position(p);
-    int current_energy = smm_get_player_energy(p);
+    // [C90] 모든 변수 선언을 함수 시작으로 이동
+    SMMPlayer p;
+    int current_pos;
+    int current_energy;
+    SMMNode home_node;
+    int home_energy;
+    int i;
+    int next_pos;
+    SMMNode next_node;
+    SMMNode final_node; 
+    
+    p = players[player_index];
+    current_pos = smm_get_player_position(p);
+    current_energy = smm_get_player_energy(p);
     
     // 집 노드(0번)의 보충 에너지를 가져옵니다. (첫 번째 노드는 항상 집 노드)
-    SMMNode home_node = (SMMNode)smmdb_getData(LISTNO_NODE, 0);
-    int home_energy = smm_get_node_energy(home_node);
+    home_node = (SMMNode)smmdb_getData(LISTNO_NODE, 0);
+    home_energy = smm_get_node_energy(home_node);
 
     printf(">> %s (P%i)가 %i칸 이동합니다. 현재 위치: %i\n", 
            smm_get_player_name(p), player_index + 1, step, current_pos);
 
-    for (int i = 1; i <= step; i++)
+    for (i = 1; i <= step; i++)
     {
-        int next_pos = (current_pos + 1) % board_nr;
-        SMMNode next_node = (SMMNode)smmdb_getData(LISTNO_NODE, next_pos);
+        next_pos = (current_pos + 1) % board_nr;
+        next_node = (SMMNode)smmdb_getData(LISTNO_NODE, next_pos);
 
         // 집 노드를 통과할 때 (0번 노드를 밟을 때)
         if (next_pos == 0)
@@ -136,26 +172,41 @@ void goForward(int player_index, int step, SMMPlayer *players, int board_nr)
     
     // 최종 위치 업데이트
     smm_set_player_position(p, current_pos);
-    SMMNode final_node = (SMMNode)smmdb_getData(LISTNO_NODE, current_pos);
+    final_node = (SMMNode)smmdb_getData(LISTNO_NODE, current_pos); // final_node 변수 선언 누락 수정 (main.c:215)
     printf(">> 최종 도착 위치: %i(%s) \n", current_pos, smm_get_node_name(final_node));
 }
 
 // action code when a player stays at a node
 void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_result)
 {
-    SMMPlayer p = players[player_index];
-    int current_pos = smm_get_player_position(p);
-    SMMNode current_node = (SMMNode)smmdb_getData(LISTNO_NODE, current_pos);
+    // [C90] 모든 변수 선언을 함수 시작으로 이동
+    SMMPlayer p;
+    int current_pos;
+    SMMNode current_node;
+    int type;
+    char* node_name;
+    int target;
+    SMMNode lab_node;
+    int node_energy;
+    int current_energy;
+    int card_index;
+    SMMFoodCard card;
+    int card_energy;
+    SMMFestCard fest_card; // 'fest_card'로 변수 이름 변경 (card와 충돌 방지)
     
-    int type = smm_get_node_type(current_node);
-    char* node_name = smm_get_node_name(current_node);
+    p = players[player_index];
+    current_pos = smm_get_player_position(p);
+    current_node = (SMMNode)smmdb_getData(LISTNO_NODE, current_pos);
+    
+    type = smm_get_node_type(current_node);
+    node_name = smm_get_node_name(current_node);
     
     // ---------------------------------------------------------------------------------
     // 1. 실험 중인 플레이어 처리 (실험실 노드를 밟지 않았어도 모든 턴에 실행)
     // ---------------------------------------------------------------------------------
     if (smm_get_player_is_experimenting(p))
     {
-        int target = smm_get_player_experiment_target_die(p);
+        target = smm_get_player_experiment_target_die(p);
         
         printf("  [?? EXPERIMENT] %s가 실험을 시도합니다. 목표 주사위: %i 이상\n", smm_get_player_name(p), target);
 
@@ -168,7 +219,7 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
             
             // 실험실 노드를 비활성화 상태로 만듭니다. (실험 성공 시 해당 실험실 노드 재활성화 필요)
             // 실험실은 2번 노드(전자공학실험실) 하나뿐이므로, 2번 노드에만 적용합니다.
-            SMMNode lab_node = (SMMNode)smmdb_getData(LISTNO_NODE, 8); // '전자공학실험실'은 8번 노드
+            lab_node = (SMMNode)smmdb_getData(LISTNO_NODE, 8); // '전자공학실험실'은 8번 노드
             smm_set_node_is_laboratory_active(lab_node, 0); // 실험 성공 시 실험실 비활성화
             
         }
@@ -186,8 +237,8 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
     // ---------------------------------------------------------------------------------
     
     // 노드 도착 시 소요 에너지 차감 (집/식당/보충찬스/축제 제외)
-    int node_energy = smm_get_node_energy(current_node);
-    int current_energy = smm_get_player_energy(p);
+    node_energy = smm_get_node_energy(current_node);
+    current_energy = smm_get_player_energy(p);
     
     if (type == 0 || type == 2 || type == 4) // 강의(0), 실험실(2), 실험(4)
     {
@@ -204,8 +255,6 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
         printf("  [ENERGY OUT] %s의 에너지가 모두 소진되었습니다. 게임 오버. ", smm_get_player_name(p));
         printf("\n=======================================================\n");
         smm_set_player_energy(p, 0); // 에너지를 0으로 설정
-        // 이 플레이어는 턴을 넘기며 다음 턴에 다시 에너지가 0이면 게임 종료 처리가 필요하지만,
-        // 단순화하여 노드 도착 시 0 이하가 되면 강제 종료하는 것으로 처리합니다. (추후 졸업/에너지 아웃 분기 필요)
     }
 
 
@@ -220,10 +269,10 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
         case 1: // 식당 (SMM_RESTAURANT)
         {
             // 식당 노드 처리 (음식 카드 뽑기)
-            int card_index = rand() % food_nr;
-            SMMFoodCard card = (SMMFoodCard)smmdb_getData(LISTNO_FOODCARD, card_index);
+            card_index = rand() % food_nr;
+            card = (SMMFoodCard)smmdb_getData(LISTNO_FOODCARD, card_index);
             
-            int card_energy = smm_get_foodcard_energy(card);
+            card_energy = smm_get_foodcard_energy(card);
             current_energy = smm_get_player_energy(p) + card_energy; // 소모 전에 이미 에너지 소모가 없으므로 현재 에너지에 더함
             smm_set_player_energy(p, current_energy);
             
@@ -242,10 +291,10 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
             else
             {
                 // 실험 시작 로직:
-                int target_die = rand() % MAX_DIE + 1; // 1~6 중 하나
+                target = rand() % MAX_DIE + 1; // 1~6 중 하나
                 smm_set_player_is_experimenting(p, 1);
-                smm_set_player_experiment_target_die(p, target_die);
-                printf("  [LAB] 실험을 시작합니다! 목표 주사위: %i 이상 (다음 턴부터 실험 시도)\n", target_die);
+                smm_set_player_experiment_target_die(p, target);
+                printf("  [LAB] 실험을 시작합니다! 목표 주사위: %i 이상 (다음 턴부터 실험 시도)\n", target);
                 
                 // 실험실 노드 비활성화
                 smm_set_node_is_laboratory_active(current_node, 0); 
@@ -269,7 +318,6 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
             smm_set_player_position(p, 8); // '전자공학실험실'은 8번 노드
             
             // 실험실로 이동했으므로, 다시 실험실 노드 액션(case 2)을 수행합니다.
-            // 하지만 이중 액션을 방지하기 위해 여기서는 이동만 처리합니다.
             // (주의: 문제 정의서에 '실험 노드 도착 시 실험실로 이동'만 명시되어 있으므로, 이동 후 별도 액션은 취하지 않습니다.)
             break;
         }
@@ -277,10 +325,10 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
         {
             printf("  [FOOD CHANCE] 보충 찬스! 음식 카드 효과가 발동됩니다.\n");
             // 식당 노드와 동일한 로직을 수행합니다. (코드 복사)
-            int card_index = rand() % food_nr;
-            SMMFoodCard card = (SMMFoodCard)smmdb_getData(LISTNO_FOODCARD, card_index);
+            card_index = rand() % food_nr;
+            card = (SMMFoodCard)smmdb_getData(LISTNO_FOODCARD, card_index);
             
-            int card_energy = smm_get_foodcard_energy(card);
+            card_energy = smm_get_foodcard_energy(card);
             current_energy = smm_get_player_energy(p) + card_energy; 
             smm_set_player_energy(p, current_energy);
             
@@ -292,10 +340,10 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
         case 6: // 축제 (SMM_FESTIVAL)
         {
             // 축제 노드 처리 (축제 카드 뽑기)
-            int card_index = rand() % festival_nr;
-            SMMFestCard card = (SMMFestCard)smmdb_getData(LISTNO_FESTCARD, card_index);
+            card_index = rand() % festival_nr;
+            fest_card = (SMMFestCard)smmdb_getData(LISTNO_FESTCARD, card_index); // 변수 이름 변경
             
-            printf("  [FESTIVAL] 축제에 참가했습니다. 미션: \"%s\"\n", smm_get_festcard_content(card));
+            printf("  [FESTIVAL] 축제에 참가했습니다. 미션: \"%s\"\n", smm_get_festcard_content(fest_card));
             
             // 축제 노드의 동작 (에너지 소모/보충 없음)
 
@@ -310,7 +358,9 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
 
 int rolldie(int player_index, SMMPlayer *players) // 인자 변경: player -> player_index, players 추가
 {
+    // [C90] 모든 변수 선언을 함수 시작으로 이동
     char c;
+    
     printf(" Press any key to roll a die (press g to see grade): ");
     
     // 이전에 getchar()로 받은 문자가 버퍼에 남아있을 수 있으므로 먼저 비워줍니다.
@@ -347,22 +397,29 @@ int rolldie(int player_index, SMMPlayer *players) // 인자 변경: player -> player
 // 평점 기준: A+ 4.3, A0 4.0, A- 3.7, B+ 3.3, B0 3.0, B- 2.7, C+ 2.3, C0 2.0, C- 1.7
 float calcAverageGrade(int player_index, SMMPlayer *players)
 {
-    SMMPlayer p = players[player_index];
-    int list_nr = smm_get_player_lecture_list_nr(p);
-    int total_lectures = smmdb_listCount(list_nr);
+    // [C90] 모든 변수 선언을 함수 시작으로 이동
+    SMMPlayer p;
+    int list_nr;
+    int total_lectures;
+    float grade_score[9] = {4.3f, 4.0f, 3.7f, 3.3f, 3.0f, 2.7f, 2.3f, 2.0f, 1.7f};
+    float total_gpa;
+    int i; 
+    SMMLectureHistory history;
+    int grade_index;
+    
+    p = players[player_index];
+    list_nr = smm_get_player_lecture_list_nr(p);
+    total_lectures = smmdb_listCount(list_nr);
     
     if (total_lectures == 0) return 0.0f;
 
-    // 평점 테이블: SMM_APLUS(0)부터 SMM_CMINUS(8)까지 매핑
-    float grade_score[9] = {4.3f, 4.0f, 3.7f, 3.3f, 3.0f, 2.7f, 2.3f, 2.0f, 1.7f};
+    total_gpa = 0.0f;
     
-    float total_gpa = 0.0f;
-    
-    for (int i = 0; i < total_lectures; i++)
+    for (i = 0; i < total_lectures; i++)
     {
-        SMMLectureHistory history = (SMMLectureHistory)smmdb_getData(list_nr, i);
+        history = (SMMLectureHistory)smmdb_getData(list_nr, i);
         // SMMGrade_e는 int로 정의되어 있으므로 그대로 사용
-        int grade_index = (int)smm_get_lecture_grade(history); 
+        grade_index = (int)smm_get_lecture_grade(history); 
         
         if (grade_index >= 0 && grade_index < 9)
         {
@@ -377,41 +434,55 @@ float calcAverageGrade(int player_index, SMMPlayer *players)
 // 학점에 따라 성적을 랜덤으로 부여하고, 수강 이력을 DB에 저장합니다.
 SMMGrade_e takeLecture(int player_index, char *lectureName, int credit, SMMPlayer *players)
 {
-    SMMPlayer p = players[player_index];
+    // [C90] 모든 변수 선언을 함수 시작으로 이동
+    SMMPlayer p;
+    int grade_index;
+    SMMGrade_e grade; // SMMGrade_e 타입 선언
+    SMMLectureHistory lecture_history;
+    int list_nr;
+    int new_credit;
+    
+    p = players[player_index];
     
     // 1. 성적 랜덤 결정 (A+ ~ C-)
     // 0: A+ ~ 8: C- (총 9가지 성적)
-    int grade_index = rand() % 9; 
-    SMMGrade_e grade = (SMMGrade_e)grade_index;
+    grade_index = rand() % 9; 
+    grade = (SMMGrade_e)grade_index; // 선언된 변수에 값 할당
     
     // 2. 수강 이력 객체 생성
-    SMMLectureHistory lecture_history = smm_add_lecture_history(lectureName, grade);
+    lecture_history = smm_add_lecture_history(lectureName, grade);
     
     // 3. 수강 이력 DB에 추가 (플레이어 고유 리스트 번호 사용)
-    int list_nr = smm_get_player_lecture_list_nr(p);
+    list_nr = smm_get_player_lecture_list_nr(p);
     smmdb_addTail(list_nr, lecture_history);
     
     // 4. 플레이어 총 학점 갱신
-    int new_credit = smm_get_player_credit(p) + credit;
+    new_credit = smm_get_player_credit(p) + credit;
     smm_set_player_credit(p, new_credit);
 
     printf("  [GRADE] %s: %s (Credit: %i -> %i)\n", 
            lectureName, smm_get_grade_name(grade), smm_get_player_credit(p) - credit, new_credit);
-           
+            
     return grade;
 }
 
 // print final result of the game
 void printFinalResult(SMMPlayer *players, int player_nr)
 {
+    // [C90] 모든 변수 선언을 함수 시작으로 이동
+    int graduated_player_index;
+    int i;
+    float final_gpa;
+    
     printf("\n\n=======================================================\n");
-    printf("             ★★ 숙명 모두의마블 최종 결과 ★★             \n");
+    printf("              ★★ 숙명 모두의마블 최종 결과 ★★                \n");
     printf("=======================================================\n");
 
-    int graduated_player_index = -1;
+    graduated_player_index = -1;
     
     // 1. 졸업자 확인 및 승자 결정 (가장 먼저 졸업한 사람이 승자)
-    for (int i = 0; i < player_nr; i++)
+    
+    for (i = 0; i < player_nr; i++)
     {
         if (smm_get_player_position(players[i]) == 0 && 
             smm_get_player_credit(players[i]) >= GRADUATE_CREDIT)
@@ -434,9 +505,10 @@ void printFinalResult(SMMPlayer *players, int player_nr)
     printf("\n--- 최종 플레이어 상태 ---\n");
     
     // 2. 모든 플레이어의 최종 상태 출력 (학점 및 GPA)
-    for (int i = 0; i < player_nr; i++)
+    
+    for (i = 0; i < player_nr; i++)
     {
-        float final_gpa = calcAverageGrade(i, players);
+        final_gpa = calcAverageGrade(i, players);
         
         printf("[P%i] %s | 최종 학점: %i | 최종 GPA: %.2f\n",
                i + 1,
@@ -450,24 +522,33 @@ void printFinalResult(SMMPlayer *players, int player_nr)
 // print all the grade history of the player
 void printGrades(int player_index, SMMPlayer *players)
 {
-    SMMPlayer p = players[player_index];
-    int list_nr = smm_get_player_lecture_list_nr(p);
-    int total_lectures = smmdb_listCount(list_nr);
+    // [C90] 모든 변수 선언을 함수 시작으로 이동
+    SMMPlayer p;
+    int list_nr;
+    int total_lectures;
+    int i;
+    SMMLectureHistory history;
+    char* lecture_name;
+    SMMGrade_e grade;
+    
+    p = players[player_index];
+    list_nr = smm_get_player_lecture_list_nr(p);
+    total_lectures = smmdb_listCount(list_nr);
 
     printf("\n---------- %s's Grade History (Total %i Lectures) ----------\n", 
            smm_get_player_name(p), total_lectures);
-
+    
     if (total_lectures == 0)
     {
         printf("  아직 수강한 강의가 없습니다.\n");
     }
     else
     {
-        for (int i = 0; i < total_lectures; i++)
+        for (i = 0; i < total_lectures; i++)
         {
-            SMMLectureHistory history = (SMMLectureHistory)smmdb_getData(list_nr, i);
-            char* lecture_name = smm_get_lecture_name(history);
-            SMMGrade_e grade = smm_get_lecture_grade(history);
+            history = (SMMLectureHistory)smmdb_getData(list_nr, i);
+            lecture_name = smm_get_lecture_name(history);
+            grade = smm_get_lecture_grade(history);
             
             // i + 1: 리스트 번호 (1번부터 시작)
             printf("  [%i] %s: %s\n", i + 1, lecture_name, smm_get_grade_name(grade));
@@ -477,23 +558,41 @@ void printGrades(int player_index, SMMPlayer *players)
 }
 
 int main(int argc, const char * argv[]) {
-    
-    FILE* fp;
+    // [C90] main 함수에 필요한 모든 변수를 함수의 시작 부분에 선언합니다.
+    FILE* fp = NULL;
     // 파일 입출력 시 사용할 변수 정의
     char name[MAX_CHARNAME];
     int type;
     int credit;
     int energy;
     char content[MAX_CHARNAME]; // 축제 카드용
-
-    // 플레이어 초기 에너지 저장을 위한 변수
-    int initial_player_energy = 0;
+    size_t len; // 문자열 길이 계산용
     
+    // 플레이어 초기 에너지 저장을 위한 변수
+    int initial_player_energy; // 초기화는 아래에서 수행
+    
+    // 2. Player configuration
+    int player_nr;
+    char player_name[MAX_CHARNAME];
+    SMMPlayer players[MAX_PLAYER]; // 플레이어 객체를 저장할 배열
+    int i; // 루프 변수
+    
+    // 3. SM Marble game starts
+    int current_player_index; // 0번 플레이어부터 시작
+    int die_result;
+    SMMPlayer current_player;
+    char* current_player_name;
+    
+    
+    // 변수 초기화 블록
+    initial_player_energy = 0;
     board_nr = 0;
     food_nr = 0;
     festival_nr = 0;
+    player_nr = 0;
+    current_player_index = 0;
     
-    srand(time(NULL));
+    srand((unsigned)time(NULL)); // time.h를 사용하므로 명시적인 (unsigned) 캐스팅 추가
     
     
     //1. import parameters ---------------------------------------------------------------------------------
@@ -557,7 +656,7 @@ int main(int argc, const char * argv[]) {
     while (fgets(content, MAX_CHARNAME, fp) != NULL) //read a festival card string
     {
         // fgets로 읽은 문자열 끝의 \n 제거
-        size_t len = strlen(content);
+        len = strlen(content); // 선언된 len 변수 사용
         if (len > 0 && content[len-1] == '\n') {
             content[len-1] = '\0';
         }
@@ -577,11 +676,6 @@ int main(int argc, const char * argv[]) {
     
     //2. Player configuration ---------------------------------------------------------------------------------
     
-    int player_nr = 0;
-    char player_name[MAX_CHARNAME];
-    
-    // 플레이어 객체를 저장할 DB 리스트를 별도로 마련해야 하므로, SMMPlayer 포인터 배열을 사용합니다.
-    SMMPlayer players[MAX_PLAYER]; 
     
     do
     {
@@ -596,14 +690,13 @@ int main(int argc, const char * argv[]) {
     }
     while (player_nr < 1 || player_nr > MAX_PLAYER);
     
-    
-    for (int i = 0; i < player_nr; i++)
+    for (i = 0; i < player_nr; i++)
     {
         printf("Input player %i name: ", i+1);
         if (fgets(player_name, MAX_CHARNAME, stdin) != NULL)
         {
             // fgets로 읽은 문자열 끝의 \n 제거
-            size_t len = strlen(player_name);
+            len = strlen(player_name); // 선언된 len 변수 사용
             if (len > 0 && player_name[len-1] == '\n') {
                 player_name[len-1] = '\0';
             }
@@ -622,19 +715,16 @@ int main(int argc, const char * argv[]) {
 
     //3. SM Marble game starts ---------------------------------------------------------------------------------
     
-    int current_player_index = 0; // 0번 플레이어부터 시작
-    
     printf("\n\n==================== 숙명 모두의마블 게임 시작 ====================\n");
     
     // player_nr은 이미 //2. Player configuration에서 정의되었습니다.
     while (!isGraduated(players, player_nr, board_nr)) // 졸업자가 나올 때까지 반복
     {
-        int die_result;
-        SMMPlayer current_player = players[current_player_index];
-        char* player_name = smm_get_player_name(current_player);
+        current_player = players[current_player_index];
+        current_player_name = smm_get_player_name(current_player);
         
         printf("\n\n======== %s's Turn (P%i) (Credit: %i) ========\n", 
-               player_name, 
+               current_player_name, 
                current_player_index + 1, 
                smm_get_player_credit(current_player));
         
@@ -644,7 +734,7 @@ int main(int argc, const char * argv[]) {
         // 4-2. die rolling (if not in experiment)
         if (smm_get_player_is_experimenting(current_player))
         {
-            printf(">> %s (P%i)는 실험 중입니다. 이동 불가. 실험을 시도합니다.\n", player_name, current_player_index + 1);
+            printf(">> %s (P%i)는 실험 중입니다. 이동 불가. 실험을 시도합니다.\n", current_player_name, current_player_index + 1);
             // rolldie 함수 인자 수정 (player_index, players)
             die_result = rolldie(current_player_index, players); 
             printf(">> 주사위 결과: %i\n", die_result);
