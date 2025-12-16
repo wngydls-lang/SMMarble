@@ -2,7 +2,6 @@
 //  main.c
 //  SMMarble
 //
-//  Created by Juyeop Kim on 2023/11/05.
 //
 
 #include <time.h>
@@ -36,7 +35,275 @@ void* findGrade(int player, char *lectureName); //find the grade from the player
 void printGrades(int player); //print all the grade history of the player
 #endif
 
+// =================================================================================================
+// PHASE 3 구현 함수 시작
+// =================================================================================================
 
+// check if any player is graduated
+// 졸업 조건: GRADUATE_CREDIT 이상 이수 + 집 노드(유형 3)에 위치
+int isGraduated(SMMPlayer *players, int player_nr, int board_nr)
+{
+    // 0번 노드는 집 노드이므로, DB에서 가져올 필요 없이 0번 위치 확인만으로 충분합니다.
+    
+    for (int i = 0; i < player_nr; i++)
+    {
+        // 1. 학점 확인: GRADUATE_CREDIT 이상
+        if (smm_get_player_credit(players[i]) >= GRADUATE_CREDIT)
+        {
+            // 2. 위치 확인: 집 노드(0번 위치)에 있는지
+            if (smm_get_player_position(players[i]) == 0)
+            {
+                printf("\n=======================================================\n");
+                printf("  [★ GRADUATED!] %s가 졸업하여 게임을 종료합니다! ", smm_get_player_name(players[i]));
+                printf("\n=======================================================\n");
+                return 1; // 졸업한 플레이어가 있으면 1 반환 (게임 종료)
+            }
+        }
+    }
+    return 0; // 졸업한 플레이어가 없으면 0 반환
+}
+
+// print all player status at the beginning of each turn
+void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr)
+{
+    printf("\n\n-------------------------------------------------------\n");
+    printf("                  CURRENT PLAYER STATUS                \n");
+    printf("-------------------------------------------------------\n");
+    
+    for (int i = 0; i < player_nr; i++)
+    {
+        SMMPlayer p = players[i];
+        int pos = smm_get_player_position(p);
+        // DB에서 현재 위치의 노드 정보를 가져옵니다.
+        SMMNode current_node = (SMMNode)smmdb_getData(LISTNO_NODE, pos);
+        
+        printf("[P%i] %s (Energy: %i, Credit: %i) | Location: %i(%s)",
+               i + 1,
+               smm_get_player_name(p),
+               smm_get_player_energy(p),
+               smm_get_player_credit(p),
+               pos,
+               smm_get_node_name(current_node));
+
+        if (smm_get_player_is_experimenting(p))
+        {
+            printf(" [?? EXPERIMENTING: Target %i]", smm_get_player_experiment_target_die(p));
+        }
+        
+        // 여기에 평균 성적 출력 로직을 넣어야 하지만, calcAverageGrade 함수가 아직 구현되지 않았으므로 생략합니다.
+        
+        printf("\n");
+    }
+    printf("-------------------------------------------------------\n");
+}
+
+// =================================================================================================
+// PHASE 3 구현 함수 끝
+// =================================================================================================
+
+// make player go "step" steps on the board (check if player is graduated)
+void goForward(int player_index, int step, SMMPlayer *players, int board_nr)
+{
+    SMMPlayer p = players[player_index];
+    int current_pos = smm_get_player_position(p);
+    int current_energy = smm_get_player_energy(p);
+    
+    // 집 노드(0번)의 보충 에너지를 가져옵니다. (첫 번째 노드는 항상 집 노드)
+    SMMNode home_node = (SMMNode)smmdb_getData(LISTNO_NODE, 0);
+    int home_energy = smm_get_node_energy(home_node);
+
+    printf(">> %s (P%i)가 %i칸 이동합니다. 현재 위치: %i\n", 
+           smm_get_player_name(p), player_index + 1, step, current_pos);
+
+    for (int i = 1; i <= step; i++)
+    {
+        int next_pos = (current_pos + 1) % board_nr;
+        SMMNode next_node = (SMMNode)smmdb_getData(LISTNO_NODE, next_pos);
+
+        // 집 노드를 통과할 때 (0번 노드를 밟을 때)
+        if (next_pos == 0)
+        {
+            current_energy += home_energy;
+            smm_set_player_energy(p, current_energy);
+            printf("  [PASS HOME] %s(%i) 노드 통과! 에너지를 %i 보충 받습니다. (현재 에너지: %i)\n", 
+                   smm_get_node_name(next_node), next_pos, home_energy, current_energy);
+        }
+
+        current_pos = next_pos;
+    }
+    
+    // 최종 위치 업데이트
+    smm_set_player_position(p, current_pos);
+    SMMNode final_node = (SMMNode)smmdb_getData(LISTNO_NODE, current_pos);
+    printf(">> 최종 도착 위치: %i(%s) \n", current_pos, smm_get_node_name(final_node));
+}
+
+// action code when a player stays at a node
+void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_result)
+{
+    SMMPlayer p = players[player_index];
+    int current_pos = smm_get_player_position(p);
+    SMMNode current_node = (SMMNode)smmdb_getData(LISTNO_NODE, current_pos);
+    
+    int type = smm_get_node_type(current_node);
+    char* node_name = smm_get_node_name(current_node);
+    
+    // ---------------------------------------------------------------------------------
+    // 1. 실험 중인 플레이어 처리 (실험실 노드를 밟지 않았어도 모든 턴에 실행)
+    // ---------------------------------------------------------------------------------
+    if (smm_get_player_is_experimenting(p))
+    {
+        int target = smm_get_player_experiment_target_die(p);
+        
+        printf("  [?? EXPERIMENT] %s가 실험을 시도합니다. 목표 주사위: %i 이상\n", smm_get_player_name(p), target);
+
+        // 실험 성공: 주사위 결과 >= 목표값
+        if (die_result >= target) 
+        {
+            printf("  [SUCCESS] 주사위 %i! 실험에 성공하여 실험 상태에서 해제됩니다!\n", die_result);
+            smm_set_player_is_experimenting(p, 0); // 실험 상태 해제
+            smm_set_player_experiment_target_die(p, 0);
+            
+            // 실험실 노드를 비활성화 상태로 만듭니다. (실험 성공 시 해당 실험실 노드 재활성화 필요)
+            // 실험실은 2번 노드(전자공학실험실) 하나뿐이므로, 2번 노드에만 적용합니다.
+            SMMNode lab_node = (SMMNode)smmdb_getData(LISTNO_NODE, 8); // '전자공학실험실'은 8번 노드
+            smm_set_node_is_laboratory_active(lab_node, 0); // 실험 성공 시 실험실 비활성화
+            
+        }
+        else // 실험 실패: 주사위 결과 < 목표값
+        {
+            printf("  [FAIL] 주사위 %i! 실험에 실패했습니다. 다음 턴에 재시도합니다.\n", die_result);
+        }
+        
+        // 실험 중인 플레이어는 노드 액션 수행 없이 턴 종료
+        return; 
+    }
+    
+    // ---------------------------------------------------------------------------------
+    // 2. 일반 노드 동작 처리 (실험 중이 아닐 때만 실행)
+    // ---------------------------------------------------------------------------------
+    
+    // 노드 도착 시 소요 에너지 차감 (집/식당/보충찬스/축제 제외)
+    int node_energy = smm_get_node_energy(current_node);
+    int current_energy = smm_get_player_energy(p);
+    
+    if (type == 0 || type == 2 || type == 4) // 강의(0), 실험실(2), 실험(4)
+    {
+        current_energy -= node_energy;
+        smm_set_player_energy(p, current_energy);
+        printf("  [Energy Loss] %s(%s)에서 에너지를 %i 소모했습니다. (현재 에너지: %i)\n", 
+               node_name, smm_get_node_name(current_node), node_energy, current_energy);
+    }
+    
+    // 에너지 부족 시 게임 종료
+    if (current_energy <= 0)
+    {
+        printf("\n\n=======================================================\n");
+        printf("  [ENERGY OUT] %s의 에너지가 모두 소진되었습니다. 게임 오버. ", smm_get_player_name(p));
+        printf("\n=======================================================\n");
+        smm_set_player_energy(p, 0); // 에너지를 0으로 설정
+        // 이 플레이어는 턴을 넘기며 다음 턴에 다시 에너지가 0이면 게임 종료 처리가 필요하지만,
+        // 단순화하여 노드 도착 시 0 이하가 되면 강제 종료하는 것으로 처리합니다. (추후 졸업/에너지 아웃 분기 필요)
+    }
+
+
+    switch(type)
+    {
+        case 0: // 강의 (SMM_LECTURE)
+        {
+            // 강의 수강 및 성적 부여 함수 호출
+            takeLecture(player_index, node_name, smm_get_node_credit(current_node), players);
+            break;
+        }
+        case 1: // 식당 (SMM_RESTAURANT)
+        {
+            // 식당 노드 처리 (음식 카드 뽑기)
+            int card_index = rand() % food_nr;
+            SMMFoodCard card = (SMMFoodCard)smmdb_getData(LISTNO_FOODCARD, card_index);
+            
+            int card_energy = smm_get_foodcard_energy(card);
+            current_energy = smm_get_player_energy(p) + card_energy; // 소모 전에 이미 에너지 소모가 없으므로 현재 에너지에 더함
+            smm_set_player_energy(p, current_energy);
+            
+            printf("  [RESTAURANT] %s에서 %s(카드)를 뽑았습니다. 에너지 %i를 획득/차감합니다. (현재 에너지: %i)\n",
+                   node_name, smm_get_foodcard_name(card), card_energy, current_energy);
+
+            break;
+        }
+        case 2: // 실험실 (SMM_LABORATORY)
+        {
+            // 실험실 노드 처리 (실험 시작)
+            if (smm_get_node_is_laboratory_active(current_node) == 0) // 비활성화 상태 (실험 불가)
+            {
+                printf("  [LAB] 실험실은 비활성화 상태입니다. 다음 턴에 다시 시도해야 합니다.\n");
+            }
+            else
+            {
+                // 실험 시작 로직:
+                int target_die = rand() % MAX_DIE + 1; // 1~6 중 하나
+                smm_set_player_is_experimenting(p, 1);
+                smm_set_player_experiment_target_die(p, target_die);
+                printf("  [LAB] 실험을 시작합니다! 목표 주사위: %i 이상 (다음 턴부터 실험 시도)\n", target_die);
+                
+                // 실험실 노드 비활성화
+                smm_set_node_is_laboratory_active(current_node, 0); 
+            }
+            break;
+        }
+        case 3: // 집 (SMM_HOME) - 이동 로직에서 이미 보충
+        {
+            printf("  [HOME] 집에 도착했습니다. 다음 턴을 준비합니다.\n");
+            // 졸업 조건을 다시 한번 체크합니다.
+            if (smm_get_player_credit(p) >= GRADUATE_CREDIT)
+            {
+                printf("  [GRADUATE CHECK] 졸업 학점(%i) 충족! 졸업이 가능합니다.\n", smm_get_player_credit(p));
+            }
+
+            break;
+        }
+        case 4: // 실험 (SMM_EXPERIMENT) - 실험실로 이동
+        {
+            printf("  [EXPERIMENT] 실험에 걸려 실험실(%s)로 이동합니다.\n", smm_get_node_name(smmdb_getData(LISTNO_NODE, 8)));
+            smm_set_player_position(p, 8); // '전자공학실험실'은 8번 노드
+            
+            // 실험실로 이동했으므로, 다시 실험실 노드 액션(case 2)을 수행합니다.
+            // 하지만 이중 액션을 방지하기 위해 여기서는 이동만 처리합니다.
+            // (주의: 문제 정의서에 '실험 노드 도착 시 실험실로 이동'만 명시되어 있으므로, 이동 후 별도 액션은 취하지 않습니다.)
+            break;
+        }
+        case 5: // 보충찬스 (SMM_FOOD_CHANCE) - 음식 카드와 동일
+        {
+            printf("  [FOOD CHANCE] 보충 찬스! 음식 카드 효과가 발동됩니다.\n");
+            // 식당 노드와 동일한 로직을 수행합니다. (코드 복사)
+            int card_index = rand() % food_nr;
+            SMMFoodCard card = (SMMFoodCard)smmdb_getData(LISTNO_FOODCARD, card_index);
+            
+            int card_energy = smm_get_foodcard_energy(card);
+            current_energy = smm_get_player_energy(p) + card_energy; 
+            smm_set_player_energy(p, current_energy);
+            
+            printf("  [FOOD CHANCE] %s(카드)를 뽑았습니다. 에너지 %i를 획득/차감합니다. (현재 에너지: %i)\n",
+                   smm_get_foodcard_name(card), card_energy, current_energy);
+            
+            break;
+        }
+        case 6: // 축제 (SMM_FESTIVAL)
+        {
+            // 축제 노드 처리 (축제 카드 뽑기)
+            int card_index = rand() % festival_nr;
+            SMMFestCard card = (SMMFestCard)smmdb_getData(LISTNO_FESTCARD, card_index);
+            
+            printf("  [FESTIVAL] 축제에 참가했습니다. 미션: \"%s\"\n", smm_get_festcard_content(card));
+            
+            // 축제 노드의 동작 (에너지 소모/보충 없음)
+
+            break;
+        }
+        default:
+            printf("  [ERROR] 알 수 없는 노드 유형: %i\n", type);
+            break;
+    }
+}
 
 
 int rolldie(int player)
@@ -66,6 +333,33 @@ void actionNode(int player)
     }
 }
 
+// take the lecture (insert a grade of the player)
+// 학점에 따라 성적을 랜덤으로 부여하고, 수강 이력을 DB에 저장합니다.
+SMMGrade_e takeLecture(int player_index, char *lectureName, int credit, SMMPlayer *players)
+{
+    SMMPlayer p = players[player_index];
+    
+    // 1. 성적 랜덤 결정 (A+ ~ C-)
+    // 0: A+ ~ 8: C- (총 9가지 성적)
+    int grade_index = rand() % 9; 
+    SMMGrade_e grade = (SMMGrade_e)grade_index;
+    
+    // 2. 수강 이력 객체 생성
+    SMMLectureHistory lecture_history = smm_add_lecture_history(lectureName, grade);
+    
+    // 3. 수강 이력 DB에 추가 (플레이어 고유 리스트 번호 사용)
+    int list_nr = smm_get_player_lecture_list_nr(p);
+    smmdb_addTail(list_nr, lecture_history);
+    
+    // 4. 플레이어 총 학점 갱신
+    int new_credit = smm_get_player_credit(p) + credit;
+    smm_set_player_credit(p, new_credit);
+
+    printf("  [GRADE] %s: %s (Credit: %i -> %i)\n", 
+           lectureName, smm_get_grade_name(grade), smm_get_player_credit(p) - credit, new_credit);
+           
+    return grade;
+}
 
 
 int main(int argc, const char * argv[]) {
@@ -213,25 +507,55 @@ int main(int argc, const char * argv[]) {
 
 
     //3. SM Marble game starts ---------------------------------------------------------------------------------
-    while () //is anybody graduated?
+    
+    int current_player_index = 0; // 0번 플레이어부터 시작
+    
+    printf("\n\n==================== 숙명 모두의마블 게임 시작 ====================\n");
+    
+    // player_nr은 이미 //2. Player configuration에서 정의되었습니다.
+    while (!isGraduated(players, player_nr, board_nr)) // 졸업자가 나올 때까지 반복
     {
         int die_result;
+        SMMPlayer current_player = players[current_player_index];
+        char* player_name = smm_get_player_name(current_player);
         
-        //4-1. initial printing
-        //printPlayerStatus();
+        printf("\n\n======== %s's Turn (P%i) (Credit: %i) ========\n", 
+               player_name, 
+               current_player_index + 1, 
+               smm_get_player_credit(current_player));
         
-        //4-2. die rolling (if not in experiment)
-        
-        
-        //4-3. go forward
-        //goForward();
+        // 4-1. initial printing (턴 시작 시 전체 상태 출력)
+        printPlayerStatus(players, player_nr, board_nr);
+      
+        // 4-2. die rolling (if not in experiment)
+        if (smm_get_player_is_experimenting(current_player))
+        {
+            printf(">> %s (P%i)는 실험 중입니다. 이동 불가. 실험을 시도합니다.\n", player_name, current_player_index + 1);
+            die_result = rolldie(current_player_index); 
+            printf(">> 주사위 결과: %i\n", die_result);
+            
+            // 실험 중: 이동 없이 현재 위치에서 actionNode 실행
+            actionNode(current_player_index, players, board_nr, die_result); 
+        }
+        else
+        {
+            // 일반 상태: 주사위를 굴리고 이동합니다.
+            die_result = rolldie(current_player_index); 
+            printf(">> 주사위 결과: %i\n", die_result);
 
-		//4-4. take action at the destination node of the board
-        //actionNode();
-        
-        //4-5. next turn
-        
+            // 4-3. go forward (이동)
+            goForward(current_player_index, die_result, players, board_nr); 
+
+            // 4-4. take action at the destination node of the board (노드 액션)
+            actionNode(current_player_index, players, board_nr, die_result); 
+        }
+
+        // 4-5. next turn (다음 플레이어로 이동)
+        current_player_index = (current_player_index + 1) % player_nr;
     }
+    
+    // 게임 종료 후 결과 출력 로직 (다음 단계에서 구현)
+    // printFinalResult(players, player_nr);
     
     return 0;
 }
