@@ -4,10 +4,10 @@
 //
 //
 
-#include <stdio.h> // C90 표준에서는 stdio.h가 필요합니다.
+#include <stdio.h> 
 #include <time.h>
 #include <string.h>
-#include <stdlib.h> // rand, srand, size_t 등을 위해 추가 (smm_common.h에 이미 있으나 명시적으로 유지)
+#include <stdlib.h> 
 
 #include "smm_object.h"
 #include "smm_database.h"
@@ -25,21 +25,18 @@ static int festival_nr;
 
 
 // ========================================================================================
-// [수정 1] 누락된 타입 정의 추가 (SMMGrade_e)
-// SMMGrade_e가 헤더 파일에 없으므로 main.c 상단에 추가하여 타입 오류를 해결합니다.
-//========================================================================================
+// 강의 성적 학점 
+ 
 typedef enum smmGrade_e {
     SMM_APLUS, SMM_A0, SMM_AMINUS,
     SMM_BPLUS, SMM_B0, SMM_BMINUS,
     SMM_CPLUS, SMM_C0, SMM_CMINUS,
-    SMM_F // F학점도 포함
 } SMMGrade_e;
 
 
 // ========================================================================================
-// [수정 3] 모든 함수의 원형 선언 (Prototype)
-// main 함수보다 나중에 정의된 함수들을 위해 C90 문법을 준수합니다.
-//========================================================================================
+// 모든 함수의 원형 선언 (Prototype)
+
 int isGraduated(SMMPlayer *players, int player_nr, int board_nr);
 void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr);
 void goForward(int player_index, int step, SMMPlayer *players, int board_nr);
@@ -52,17 +49,15 @@ void printFinalResult(SMMPlayer *players, int player_nr);
 
 
 // =================================================================================================
-// PHASE 3 구현 함수 시작
+// 함수 구현 시작
 // =================================================================================================
 
 // check if any player is graduated
 // 졸업 조건: GRADUATE_CREDIT 이상 이수 + 집 노드(유형 3)에 위치
 int isGraduated(SMMPlayer *players, int player_nr, int board_nr)
 {
-    // [C90] 루프 변수 'i'는 함수 시작 부분에 선언된 것으로 간주합니다.
     int i; 
-    
-    // 0번 노드는 집 노드이므로, DB에서 가져올 필요 없이 0번 위치 확인만으로 충분합니다.
+
     for (i = 0; i < player_nr; i++)
     {
         // 1. 학점 확인: GRADUATE_CREDIT 이상
@@ -84,7 +79,6 @@ int isGraduated(SMMPlayer *players, int player_nr, int board_nr)
 // print all player status at the beginning of each turn
 void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr)
 {
-    // [C90] 모든 변수 선언을 함수 시작으로 이동
     int i;
     SMMPlayer p;
     int pos;
@@ -102,7 +96,7 @@ void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr)
         // DB에서 현재 위치의 노드 정보를 가져옵니다.
         current_node = (SMMNode)smmdb_getData(LISTNO_NODE, pos);
         
-        // GPA 계산 (Phase 5 반영)
+        // GPA 계산 
         gpa = calcAverageGrade(i, players);
         
         printf("[P%i] %s (E: %i, C: %i, GPA: %.2f) | Location: %i(%s)",
@@ -125,13 +119,10 @@ void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr)
 }
 
 // =================================================================================================
-// PHASE 3 구현 함수 끝
-// =================================================================================================
 
 // make player go "step" steps on the board (check if player is graduated)
 void goForward(int player_index, int step, SMMPlayer *players, int board_nr)
 {
-    // [C90] 모든 변수 선언을 함수 시작으로 이동
     SMMPlayer p;
     int current_pos;
     int current_energy;
@@ -179,7 +170,6 @@ void goForward(int player_index, int step, SMMPlayer *players, int board_nr)
 // action code when a player stays at a node
 void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_result)
 {
-    // [C90] 모든 변수 선언을 함수 시작으로 이동
     SMMPlayer p;
     int current_pos;
     SMMNode current_node;
@@ -318,7 +308,7 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
             smm_set_player_position(p, 8); // '전자공학실험실'은 8번 노드
             
             // 실험실로 이동했으므로, 다시 실험실 노드 액션(case 2)을 수행합니다.
-            // (주의: 문제 정의서에 '실험 노드 도착 시 실험실로 이동'만 명시되어 있으므로, 이동 후 별도 액션은 취하지 않습니다.)
+            // 문제 정의서에 '실험 노드 도착 시 실험실로 이동'만 명시되어 있으므로, 이동 후 별도 액션은 취하지 않습니다.
             break;
         }
         case 5: // 보충찬스 (SMM_FOOD_CHANCE) - 음식 카드와 동일
@@ -358,7 +348,6 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
 
 int rolldie(int player_index, SMMPlayer *players) // 인자 변경: player -> player_index, players 추가
 {
-    // [C90] 모든 변수 선언을 함수 시작으로 이동
     char c;
     
     printf(" Press any key to roll a die (press g to see grade): ");
@@ -397,7 +386,6 @@ int rolldie(int player_index, SMMPlayer *players) // 인자 변경: player -> player
 // 평점 기준: A+ 4.3, A0 4.0, A- 3.7, B+ 3.3, B0 3.0, B- 2.7, C+ 2.3, C0 2.0, C- 1.7
 float calcAverageGrade(int player_index, SMMPlayer *players)
 {
-    // [C90] 모든 변수 선언을 함수 시작으로 이동
     SMMPlayer p;
     int list_nr;
     int total_lectures;
@@ -522,7 +510,6 @@ void printFinalResult(SMMPlayer *players, int player_nr)
 // print all the grade history of the player
 void printGrades(int player_index, SMMPlayer *players)
 {
-    // [C90] 모든 변수 선언을 함수 시작으로 이동
     SMMPlayer p;
     int list_nr;
     int total_lectures;
@@ -558,7 +545,7 @@ void printGrades(int player_index, SMMPlayer *players)
 }
 
 int main(int argc, const char * argv[]) {
-    // [C90] main 함수에 필요한 모든 변수를 함수의 시작 부분에 선언합니다.
+    
     FILE* fp = NULL;
     // 파일 입출력 시 사용할 변수 정의
     char name[MAX_CHARNAME];
@@ -652,7 +639,7 @@ int main(int argc, const char * argv[]) {
     }
     
     printf("\n\nReading festival card component......\n");
-    // (띄어쓰기 없는 문자열) - 파일 전체를 한 줄씩 읽는 로직 사용
+    
     while (fgets(content, MAX_CHARNAME, fp) != NULL) //read a festival card string
     {
         // fgets로 읽은 문자열 끝의 \n 제거
@@ -760,7 +747,7 @@ int main(int argc, const char * argv[]) {
         current_player_index = (current_player_index + 1) % player_nr;
     }
     
-    // 게임 종료 후 결과 출력 로직 (Phase 6 반영)
+    // 게임 종료 후 결과 출력 로직 
     printFinalResult(players, player_nr);
     
     return 0;
