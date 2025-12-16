@@ -322,15 +322,35 @@ int rolldie(int player)
 }
 
 
-//action code when a player stays at a node
-void actionNode(int player)
+
+// calculate average grade of the player
+// 평점 기준: A+ 4.3, A0 4.0, A- 3.7, B+ 3.3, B0 3.0, B- 2.7, C+ 2.3, C0 2.0, C- 1.7
+float calcAverageGrade(int player_index, SMMPlayer *players)
 {
-    switch(type)
+    SMMPlayer p = players[player_index];
+    int list_nr = smm_get_player_lecture_list_nr(p);
+    int total_lectures = smmdb_listCount(list_nr);
+    
+    if (total_lectures == 0) return 0.0f;
+
+    // 평점 테이블: SMM_APLUS(0)부터 SMM_CMINUS(8)까지 매핑
+    float grade_score[9] = {4.3f, 4.0f, 3.7f, 3.3f, 3.0f, 2.7f, 2.3f, 2.0f, 1.7f};
+    
+    float total_gpa = 0.0f;
+    
+    for (int i = 0; i < total_lectures; i++)
     {
-        //case lecture:
-        default:
-            break;
+        SMMLectureHistory history = (SMMLectureHistory)smmdb_getData(list_nr, i);
+        // SMMGrade_e는 int로 정의되어 있으므로 그대로 사용
+        int grade_index = (int)smm_get_lecture_grade(history); 
+        
+        if (grade_index >= 0 && grade_index < 9)
+        {
+            total_gpa += grade_score[grade_index];
+        }
     }
+    
+    return total_gpa / total_lectures;
 }
 
 // take the lecture (insert a grade of the player)
