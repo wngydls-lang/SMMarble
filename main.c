@@ -640,12 +640,13 @@ int main(int argc, const char * argv[]) {
         
         // 4-1. initial printing (턴 시작 시 전체 상태 출력)
         printPlayerStatus(players, player_nr, board_nr);
-      
+        
         // 4-2. die rolling (if not in experiment)
         if (smm_get_player_is_experimenting(current_player))
         {
             printf(">> %s (P%i)는 실험 중입니다. 이동 불가. 실험을 시도합니다.\n", player_name, current_player_index + 1);
-            die_result = rolldie(current_player_index); 
+            // rolldie 함수 인자 수정 (player_index, players)
+            die_result = rolldie(current_player_index, players); 
             printf(">> 주사위 결과: %i\n", die_result);
             
             // 실험 중: 이동 없이 현재 위치에서 actionNode 실행
@@ -654,7 +655,8 @@ int main(int argc, const char * argv[]) {
         else
         {
             // 일반 상태: 주사위를 굴리고 이동합니다.
-            die_result = rolldie(current_player_index); 
+            // rolldie 함수 인자 수정 (player_index, players)
+            die_result = rolldie(current_player_index, players); 
             printf(">> 주사위 결과: %i\n", die_result);
 
             // 4-3. go forward (이동)
@@ -668,8 +670,8 @@ int main(int argc, const char * argv[]) {
         current_player_index = (current_player_index + 1) % player_nr;
     }
     
-    // 게임 종료 후 결과 출력 로직 (다음 단계에서 구현)
-    // printFinalResult(players, player_nr);
+    // 게임 종료 후 결과 출력 로직 (Phase 6 반영)
+    printFinalResult(players, player_nr);
     
     return 0;
 }
