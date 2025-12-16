@@ -77,11 +77,15 @@ void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr)
         // DB에서 현재 위치의 노드 정보를 가져옵니다.
         SMMNode current_node = (SMMNode)smmdb_getData(LISTNO_NODE, pos);
         
-        printf("[P%i] %s (Energy: %i, Credit: %i) | Location: %i(%s)",
+        // GPA 계산 (Phase 5 반영)
+        float gpa = calcAverageGrade(i, players);
+        
+        printf("[P%i] %s (E: %i, C: %i, GPA: %.2f) | Location: %i(%s)",
                i + 1,
                smm_get_player_name(p),
                smm_get_player_energy(p),
                smm_get_player_credit(p),
+               gpa, // GPA 출력
                pos,
                smm_get_node_name(current_node));
 
@@ -89,8 +93,6 @@ void printPlayerStatus(SMMPlayer *players, int player_nr, int board_nr)
         {
             printf(" [?? EXPERIMENTING: Target %i]", smm_get_player_experiment_target_die(p));
         }
-        
-        // 여기에 평균 성적 출력 로직을 넣어야 하지만, calcAverageGrade 함수가 아직 구현되지 않았으므로 생략합니다.
         
         printf("\n");
     }
