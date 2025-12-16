@@ -308,21 +308,39 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
 }
 
 
-int rolldie(int player)
+int rolldie(int player_index, SMMPlayer *players) // 인자 변경: player -> player_index, players 추가
 {
     char c;
     printf(" Press any key to roll a die (press g to see grade): ");
+    
+    // 이전에 getchar()로 받은 문자가 버퍼에 남아있을 수 있으므로 먼저 비워줍니다.
+    fflush(stdin); 
+    
+    // 사용자 입력 받기
     c = getchar();
-    fflush(stdin);
     
-#if 0
-    if (c == 'g')
-        printGrades(player);
-#endif
+    // 입력 버퍼에 개행 문자가 남아있을 수 있으므로 버퍼를 비워줍니다.
+    if (c != '\n' && c != EOF) {
+        while(getchar() != '\n' && getchar() != EOF);
+    }
     
+    if (c == 'g' || c == 'G') // 'g' 또는 'G' 입력 시
+    {
+        printGrades(player_index, players); // 수정된 printGrades 함수 호출
+        
+        // 성적 출력 후 다시 주사위를 굴릴 기회를 줍니다.
+        printf(" Press any key to roll a die: ");
+        
+        // 다시 입력 받기
+        c = getchar();
+        if (c != '\n' && c != EOF) {
+            while(getchar() != '\n' && getchar() != EOF);
+        }
+    }
+    
+    // 주사위 굴림 결과 반환
     return (rand()%MAX_DIE + 1);
 }
-
 
 
 // calculate average grade of the player
@@ -383,6 +401,80 @@ SMMGrade_e takeLecture(int player_index, char *lectureName, int credit, SMMPlaye
     return grade;
 }
 
+// print final result of the game
+void printFinalResult(SMMPlayer *players, int player_nr)
+{
+    printf("\n\n=======================================================\n");
+    printf("             ★★ 숙명 모두의마블 최종 결과 ★★             \n");
+    printf("=======================================================\n");
+
+    int graduated_player_index = -1;
+    
+    // 1. 졸업자 확인 및 승자 결정 (가장 먼저 졸업한 사람이 승자)
+    for (int i = 0; i < player_nr; i++)
+    {
+        if (smm_get_player_position(players[i]) == 0 && 
+            smm_get_player_credit(players[i]) >= GRADUATE_CREDIT)
+        {
+            graduated_player_index = i;
+            break;
+        }
+    }
+
+    if (graduated_player_index != -1)
+    {
+        printf(" ★ 승자: %s (최초 졸업자)\n", smm_get_player_name(players[graduated_player_index]));
+    }
+    else
+    {
+        // 이론상 while(!isGraduated) 루프 때문에 여기에 도달하지 않아야 하지만, 안전을 위해 메시지 출력
+        printf(" 게임이 종료되었지만, 명확한 졸업자가 확인되지 않았습니다.\n");
+    }
+
+    printf("\n--- 최종 플레이어 상태 ---\n");
+    
+    // 2. 모든 플레이어의 최종 상태 출력 (학점 및 GPA)
+    for (int i = 0; i < player_nr; i++)
+    {
+        float final_gpa = calcAverageGrade(i, players);
+        
+        printf("[P%i] %s | 최종 학점: %i | 최종 GPA: %.2f\n",
+               i + 1,
+               smm_get_player_name(players[i]),
+               smm_get_player_credit(players[i]),
+               final_gpa);
+    }
+    printf("---------------------------\n");
+}
+
+// print all the grade history of the player
+void printGrades(int player_index, SMMPlayer *players)
+{
+    SMMPlayer p = players[player_index];
+    int list_nr = smm_get_player_lecture_list_nr(p);
+    int total_lectures = smmdb_listCount(list_nr);
+
+    printf("\n---------- %s's Grade History (Total %i Lectures) ----------\n", 
+           smm_get_player_name(p), total_lectures);
+
+    if (total_lectures == 0)
+    {
+        printf("  아직 수강한 강의가 없습니다.\n");
+    }
+    else
+    {
+        for (int i = 0; i < total_lectures; i++)
+        {
+            SMMLectureHistory history = (SMMLectureHistory)smmdb_getData(list_nr, i);
+            char* lecture_name = smm_get_lecture_name(history);
+            SMMGrade_e grade = smm_get_lecture_grade(history);
+            
+            // i + 1: 리스트 번호 (1번부터 시작)
+            printf("  [%i] %s: %s\n", i + 1, lecture_name, smm_get_grade_name(grade));
+        }
+    }
+    printf("----------------------------------------------------------\n");
+}
 
 int main(int argc, const char * argv[]) {
     
