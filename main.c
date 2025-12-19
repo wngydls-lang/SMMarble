@@ -358,10 +358,21 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
         }
         case 6: // 축제 (SMM_FESTIVAL)
         {
+            char answer[200]; // 사용자 답변 저장 배열
+             
             card_index = rand() % festival_nr;
             fest_card = (SMMFestCard)smmdb_getData(LISTNO_FESTCARD, card_index);
-            
+            // 미션 내용 출력 
             printf("  [FESTIVAL] 축제에 참가했습니다. 미션: \"%s\"\n", smm_get_festcard_content(fest_card));
+            // 사용자 입력 대기 (미션 수행) 
+            printf("  >> 미션 수행 (답변 입력): ");
+            scanf(" %[^\n]s", answer);
+            // 결과 출력 및 보상
+            printf("\n  [SUCCESS} \"%s\"라고 답변하셨군요!\n", answer);
+            printf("  축제 분위기에 힘입어 에너지 5 가 보충됩니다!\n");
+            
+            //보상 에너지 5 증가
+            smm_set_player_energy(p, smm_get_player_energy(p) + 5); 
 
             break;
         }
