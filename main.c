@@ -3,6 +3,7 @@
 //  SMMarble
 //
 //
+// 드디어 완성인가..? 
 
 #include <stdio.h> 
 #include <time.h>
@@ -15,8 +16,7 @@
 
 #define BOARDFILEPATH "marbleBoardConfig.txt"
 #define FOODFILEPATH "marbleFoodConfig.txt"
-#define FESTFILEPATH "marbleFestivalConfig.txt"
-
+#define FESTFILEPATH "marbleFestivalConfig.txt" 
 
 //board configuration parameters
 static int board_nr;
@@ -368,8 +368,8 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
             printf("  >> 미션 수행 (답변 입력): ");
             scanf(" %[^\n]s", answer);
             // 결과 출력 및 보상
-            printf("\n  [SUCCESS} \"%s\"라고 답변하셨군요!\n", answer);
-            printf("  축제 분위기에 힘입어 에너지 5 가 보충됩니다!\n");
+            printf("\n  [SUCCESS] \"%s\"라고 답변하셨군요!\n", answer);
+            printf("  축제 분위기에 힘입어 에너지 5 가 보충됩니다! \n");
             
             //보상 에너지 5 증가
             smm_set_player_energy(p, smm_get_player_energy(p) + 5); 

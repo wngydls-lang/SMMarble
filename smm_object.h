@@ -56,6 +56,10 @@ int smm_get_foodcard_energy(SMMFoodCard card);
 // Festival Card Getters
 char* smm_get_festcard_content(SMMFestCard card);
 
+// Lecture History Getters
+char* smm_get_lecture_name(SMMLectureHistory history);
+int smm_get_lecture_grade(SMMLectureHistory history);
+
 // Player Getters
 char* smm_get_player_name(SMMPlayer player);
 int smm_get_player_energy(SMMPlayer player);
