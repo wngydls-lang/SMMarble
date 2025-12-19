@@ -13,7 +13,7 @@
 
 #define MAX_CHARNAME                200
 
-#define GRADUATE_CREDIT             30
+#define GRADUATE_CREDIT             15
 #define MAX_DIE                     6
 #define MAX_PLAYER                  10
 
