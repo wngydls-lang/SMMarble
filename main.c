@@ -373,10 +373,9 @@ void actionNode(int player_index, SMMPlayer *players, int board_nr, int die_resu
     // 에너지 고갈 체크
     if (smm_get_player_energy(p) <= 0)
     {
-        printf("\n\n=======================================================\n");
-        printf("  [ENERGY OUT] %s의 에너지가 모두 소진되었습니다. 게임 오버. ", smm_get_player_name(p));
-        printf("\n=======================================================\n");
-        smm_set_player_energy(p, 0);
+       printf("\n  [WARNING] %s의 에너지가 바닥났습니다! (현재: %i)\n", 
+           smm_get_player_name(p), smm_get_player_energy(p));
+       printf("  에너지가 부족하면 강의 수강이 불가능합니다. 집(HOME)을 통과하여 충전하세요.\n");
     }
 }
 
